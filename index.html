@@ -1,0 +1,210 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mobile Darts Game 🎯</title>
+  <style>
+    body {
+      background: #111;
+      color: #fff;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      user-select: none;
+      margin: 0;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: #000;
+      touch-action: none;
+    }
+    #info, #scores, #winner {
+      margin: 10px;
+    }
+    #winner {
+      color: lime;
+      font-size: 1.5em;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🎯 Mobile Darts Game</h1>
+<canvas id="gameCanvas" width="600" height="600"></canvas>
+<div id="info">Hold & drag to aim, release to throw</div>
+<div id="scores">Player 1: <span id="score1">501</span> | Player 2: <span id="score2">501</span></div>
+<div id="winner"></div>
+
+<audio id="hitSound" src="https://www.soundjay.com/button/beep-07.wav"></audio>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const hitSound = document.getElementById('hitSound');
+
+const dartboardImg = new Image();
+dartboardImg.src = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/Dartboard_closeup.jpg/640px-Dartboard_closeup.jpg';
+
+const centerX = canvas.width / 2;
+const centerY = canvas.height / 2;
+const boardRadius = 250;
+
+let aimX = centerX;
+let aimY = centerY;
+
+let scores = [501, 501];
+let currentPlayer = 0;
+let throwsThisTurn = 0;
+let maxThrows = 3;
+let gameOver = false;
+
+let darts = [];
+
+let isAiming = false;
+
+dartboardImg.onload = () => draw();
+
+canvas.addEventListener('mousedown', e => { isAiming = true; moveAim(e); });
+canvas.addEventListener('mousemove', e => { if (isAiming) moveAim(e); });
+canvas.addEventListener('mouseup', () => { if (isAiming) { isAiming = false; throwDart(); } });
+
+canvas.addEventListener('touchstart', e => { isAiming = true; moveAim(e.touches[0]); e.preventDefault(); });
+canvas.addEventListener('touchmove', e => { if (isAiming) moveAim(e.touches[0]); e.preventDefault(); });
+canvas.addEventListener('touchend', () => { if (isAiming) { isAiming = false; throwDart(); } });
+
+function moveAim(e) {
+  const rect = canvas.getBoundingClientRect();
+  aimX = e.clientX - rect.left;
+  aimY = e.clientY - rect.top;
+  draw();
+}
+
+function throwDart() {
+  if (gameOver) return;
+
+  let spread = 10;
+  let targetX = aimX + (Math.random() - 0.5) * spread;
+  let targetY = aimY + (Math.random() - 0.5) * spread;
+
+  animateDart(centerX, centerY, targetX, targetY, () => {
+    let scoreHit = calculateScore(targetX, targetY);
+    if (scoreHit === 0) {
+      info(`Player ${currentPlayer + 1} missed!`);
+    } else {
+      let newScore = scores[currentPlayer] - scoreHit;
+      if (newScore < 0) {
+        info(`Bust! Score stays.`);
+      } else if (newScore === 0) {
+        scores[currentPlayer] = 0;
+        updateScores();
+        winnerEl.textContent = `🎉 Player ${currentPlayer + 1} WINS!`;
+        gameOver = true;
+        return;
+      } else {
+        scores[currentPlayer] = newScore;
+        info(`Player ${currentPlayer + 1} hits ${scoreHit}!`);
+      }
+    }
+
+    updateScores();
+    throwsThisTurn++;
+    if (throwsThisTurn >= maxThrows) {
+      currentPlayer = 1 - currentPlayer;
+      throwsThisTurn = 0;
+      info(`Player ${currentPlayer + 1}'s turn!`);
+    }
+  });
+}
+
+function animateDart(fromX, fromY, toX, toY, onHit) {
+  let dart = { x: fromX, y: fromY, targetX: toX, targetY: toY, color: currentPlayer === 0 ? 'red' : 'cyan' };
+  let duration = 200;
+  let startTime = null;
+
+  function animate(time) {
+    if (!startTime) startTime = time;
+    let t = (time - startTime) / duration;
+    if (t > 1) t = 1;
+
+    dart.x = fromX + (toX - fromX) * t;
+    dart.y = fromY + (toY - fromY) * t;
+
+    draw(dart);
+
+    if (t < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      darts.push({ x: toX, y: toY, color: dart.color });
+      hitSound.play();
+      draw();
+      onHit();
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+function calculateScore(x, y) {
+  const dx = x - centerX;
+  const dy = y - centerY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist > boardRadius) return 0;
+  if (dist <= 12) return 50;
+  if (dist <= 30) return 25;
+
+  let angle = Math.atan2(dy, dx);
+  if (angle < 0) angle += Math.PI * 2;
+  let seg = Math.floor((angle / (Math.PI * 2)) * 20);
+  let segment = [6,13,4,18,1,20,5,12,9,14,11,8,16,7,19,3,17,2,15,10][seg];
+
+  if (dist > boardRadius - 20) return segment * 2;
+  if (dist > boardRadius - 80 && dist < boardRadius - 60) return segment * 3;
+
+  return segment;
+}
+
+function info(text) {
+  document.getElementById('info').textContent = text;
+}
+
+function updateScores() {
+  document.getElementById('score1').textContent = scores[0];
+  document.getElementById('score2').textContent = scores[1];
+}
+
+function draw(tempDart) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(dartboardImg, centerX - boardRadius, centerY - boardRadius, boardRadius * 2, boardRadius * 2);
+
+  darts.forEach(d => {
+    ctx.fillStyle = d.color;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  if (tempDart) {
+    ctx.fillStyle = tempDart.color;
+    ctx.beginPath();
+    ctx.arc(tempDart.x, tempDart.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (!gameOver) {
+    ctx.strokeStyle = 'lime';
+    ctx.beginPath();
+    ctx.moveTo(aimX - 8, aimY);
+    ctx.lineTo(aimX + 8, aimY);
+    ctx.moveTo(aimX, aimY - 8);
+    ctx.lineTo(aimX, aimY + 8);
+    ctx.stroke();
+  }
+}
+
+const winnerEl = document.getElementById('winner');
+</script>
+
+</body>
+</html>
